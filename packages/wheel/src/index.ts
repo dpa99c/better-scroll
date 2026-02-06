@@ -6,7 +6,7 @@ import {
   EaseItem,
   extend,
   Position,
-  HTMLCollectionToArray
+  HTMLCollectionToArray,
 } from '@better-scroll/shared-utils'
 import propertiesConfig from './propertiesConfig'
 
@@ -39,8 +39,13 @@ interface PluginAPI {
 }
 
 const CONSTANTS = {
-  rate: 4
+  rate: 4,
 }
+
+// PERFORMANCE: Max rotation angle beyond which items are not visible
+// (they face away from the viewer in the 3D cylinder)
+const VISIBILITY_THRESHOLD_DEG = 90
+
 export default class Wheel implements PluginAPI {
   static pluginName = 'wheel'
   options: WheelConfig
@@ -50,6 +55,11 @@ export default class Wheel implements PluginAPI {
   selectedIndex: number
   isAdjustingPosition: boolean
   target: EventTarget | null
+  // PERFORMANCE: Track which items are currently visible to avoid redundant DOM writes
+  private _itemVisibility: boolean[] = []
+  // PERFORMANCE: Cache last transition values so newly-visible items can inherit them
+  private _lastTransitionDuration: string = '0ms'
+  private _lastTimingFunction: string = ''
   constructor(public scroll: BScroll) {
     this.init()
   }
@@ -69,9 +79,9 @@ export default class Wheel implements PluginAPI {
   }
 
   private handleOptions() {
-    const userOptions = (this.scroll.options.wheel === true
-      ? {}
-      : this.scroll.options.wheel) as Partial<WheelConfig>
+    const userOptions = (
+      this.scroll.options.wheel === true ? {} : this.scroll.options.wheel
+    ) as Partial<WheelConfig>
 
     const defaultOptions: WheelConfig = {
       wheelWrapperClass: 'wheel-scroll',
@@ -79,7 +89,7 @@ export default class Wheel implements PluginAPI {
       rotate: 25,
       adjustTime: 400,
       selectedIndex: 0,
-      wheelDisabledItemClass: 'wheel-disabled-item'
+      wheelDisabledItemClass: 'wheel-disabled-item',
     }
     this.options = extend(defaultOptions, userOptions)
   }
@@ -87,12 +97,8 @@ export default class Wheel implements PluginAPI {
   private handleHooks() {
     const scroll = this.scroll
     const scroller = this.scroll.scroller
-    const {
-      actionsHandler,
-      scrollBehaviorX,
-      scrollBehaviorY,
-      animater
-    } = scroller
+    const { actionsHandler, scrollBehaviorX, scrollBehaviorY, animater } =
+      scroller
     let prevContent = scroller.content
     // BScroll
     scroll.on(scroll.eventTypes.scrollEnd, (position: Position) => {
@@ -285,13 +291,15 @@ export default class Wheel implements PluginAPI {
   }
 
   private transitionDuration(time: number) {
+    this._lastTransitionDuration = time + 'ms'
     for (let i = 0; i < this.items.length; i++) {
       ;(this.items[i] as HTMLElement).style[style.transitionDuration as any] =
-        time + 'ms'
+        this._lastTransitionDuration
     }
   }
 
   private timeFunction(easing: string) {
+    this._lastTimingFunction = easing
     for (let i = 0; i < this.items.length; i++) {
       ;(this.items[i] as HTMLElement).style[
         style.transitionTimingFunction as any
@@ -301,13 +309,50 @@ export default class Wheel implements PluginAPI {
 
   private rotateX(y: number) {
     const { rotate = 25 } = this.options
-    for (let i = 0; i < this.items.length; i++) {
+    const itemCount = this.items.length
+    if (itemCount === 0) return
+
+    // PERFORMANCE: Calculate the visible range of items based on the rotation angle.
+    // Items rotated beyond ±90deg face away from the viewer and are invisible.
+    // Only update transforms for visible items + a small buffer.
+    const visibleHalf = Math.ceil(VISIBILITY_THRESHOLD_DEG / rotate) + 1
+    const currentIndex =
+      this.itemHeight > 0 ? Math.round(-y / this.itemHeight) : 0
+    const visibleStart = Math.max(0, currentIndex - visibleHalf)
+    const visibleEnd = Math.min(itemCount - 1, currentIndex + visibleHalf)
+
+    for (let i = 0; i < itemCount; i++) {
+      const item = this.items[i] as HTMLElement
+      if (i < visibleStart || i > visibleEnd) {
+        // PERFORMANCE: Item is outside visible range - hide it and skip transform update
+        if (this._itemVisibility[i] !== false) {
+          item.style.visibility = 'hidden'
+          item.style.pointerEvents = 'none'
+          this._itemVisibility[i] = false
+        }
+        continue
+      }
+
       const deg = rotate * (y / this.itemHeight + i)
       // Too small value is invalid in some phones, issue 1026
       const SafeDeg = deg.toFixed(3)
-      ;(this.items[i] as HTMLElement).style[
-        style.transform as any
-      ] = `rotateX(${SafeDeg}deg)`
+      item.style[style.transform as any] = `rotateX(${SafeDeg}deg)`
+
+      // PERFORMANCE: Restore visibility if item was previously hidden
+      if (this._itemVisibility[i] !== true) {
+        item.style.visibility = ''
+        item.style.pointerEvents = ''
+        // Apply cached transition properties to newly-visible items
+        if (this._lastTransitionDuration) {
+          item.style[style.transitionDuration as any] =
+            this._lastTransitionDuration
+        }
+        if (this._lastTimingFunction) {
+          item.style[style.transitionTimingFunction as any] =
+            this._lastTimingFunction
+        }
+        this._itemVisibility[i] = true
+      }
     }
   }
 
@@ -356,7 +401,7 @@ export default class Wheel implements PluginAPI {
     // when all the items are disabled, selectedIndex should always be -1
     return {
       index: this.wheelItemsAllDisabled ? -1 : currentIndex,
-      y: -currentIndex * this.itemHeight
+      y: -currentIndex * this.itemHeight,
     }
   }
 

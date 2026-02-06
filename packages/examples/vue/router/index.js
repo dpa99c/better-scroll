@@ -48,6 +48,7 @@ import HorizontalRotatedScroll from 'vue-example/components/core/horizontal-rota
 import OneColumnPicker from 'vue-example/components/picker/one-column'
 import DoubleColumnPicker from 'vue-example/components/picker/double-column'
 import LinkageColumnPicker from 'vue-example/components/picker/linkage-column'
+import PerfTestPicker from 'vue-example/components/picker/perf-test'
 
 import FormTextarea from 'vue-example/components/form/textarea'
 
@@ -192,6 +193,10 @@ export default new Router({
         {
           path: 'linkage-column',
           component: LinkageColumnPicker,
+        },
+        {
+          path: 'perf-test',
+          component: PerfTestPicker,
         },
       ],
     },

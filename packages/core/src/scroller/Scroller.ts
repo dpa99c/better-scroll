@@ -429,18 +429,14 @@ export default class Scroller implements ExposedAPI {
   }
 
   togglePointerEvents(enabled = true) {
-    let el = this.content.children.length
-      ? this.content.children
-      : [this.content]
-    let pointerEvents = enabled ? 'auto' : 'none'
-    for (let i = 0; i < el.length; i++) {
-      let node = el[i] as MountedBScrollHTMLElement
-      // ignore BetterScroll instance's wrapper DOM
-      /* istanbul ignore if  */
-      if (node.isBScrollContainer) {
-        continue
-      }
-      node.style.pointerEvents = pointerEvents
+    // PERFORMANCE: Set pointer-events on the content element directly instead of
+    // iterating through all children. This reduces N DOM writes to 1.
+    // The content's children inherit pointer-events from the content element.
+    // Touch/mouse events for scrolling are captured on the wrapper (parent of content),
+    // so disabling pointer-events on content doesn't affect scroll behavior.
+    let pointerEvents = enabled ? '' : 'none'
+    if (this.content.style.pointerEvents !== pointerEvents) {
+      this.content.style.pointerEvents = pointerEvents
     }
   }
 
@@ -590,14 +586,10 @@ export default class Scroller implements ExposedAPI {
   }
 
   resetPosition(time = 0, easing = ease.bounce) {
-    const {
-      position: x,
-      inBoundary: xInBoundary,
-    } = this.scrollBehaviorX.checkInBoundary()
-    const {
-      position: y,
-      inBoundary: yInBoundary,
-    } = this.scrollBehaviorY.checkInBoundary()
+    const { position: x, inBoundary: xInBoundary } =
+      this.scrollBehaviorX.checkInBoundary()
+    const { position: y, inBoundary: yInBoundary } =
+      this.scrollBehaviorY.checkInBoundary()
 
     if (xInBoundary && yInBoundary) {
       return false
