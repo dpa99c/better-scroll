@@ -45,6 +45,7 @@ const CONSTANTS = {
 // PERFORMANCE: Max rotation angle beyond which items are not visible
 // (they face away from the viewer in the 3D cylinder)
 const VISIBILITY_THRESHOLD_DEG = 90
+const VISIBILITY_BUFFER_ITEMS = 3
 
 export default class Wheel implements PluginAPI {
   static pluginName = 'wheel'
@@ -320,7 +321,8 @@ export default class Wheel implements PluginAPI {
     const itemCount = this.items.length
     if (itemCount === 0) return
 
-    const visibleHalf = Math.ceil(VISIBILITY_THRESHOLD_DEG / rotate) + 1
+    const visibleHalf =
+      Math.ceil(VISIBILITY_THRESHOLD_DEG / rotate) + VISIBILITY_BUFFER_ITEMS
     const currentIndex =
       this.itemHeight > 0 ? Math.round(-y / this.itemHeight) : 0
     const visibleStart = Math.max(0, currentIndex - visibleHalf)
@@ -331,7 +333,6 @@ export default class Wheel implements PluginAPI {
       if (i < visibleStart || i > visibleEnd) {
         if (this._itemVisibility[i] !== false) {
           item.style.visibility = 'hidden'
-          item.style.pointerEvents = 'none'
           this._itemVisibility[i] = false
         }
         continue
@@ -344,7 +345,6 @@ export default class Wheel implements PluginAPI {
 
       if (this._itemVisibility[i] !== true) {
         item.style.visibility = ''
-        item.style.pointerEvents = ''
         if (this._lastTransitionDuration) {
           item.style[style.transitionDuration as any] =
             this._lastTransitionDuration
