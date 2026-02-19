@@ -55,12 +55,11 @@ export default class Wheel implements PluginAPI {
   selectedIndex: number
   isAdjustingPosition: boolean
   target: EventTarget | null
+  // PERFORMANCE: Track which items are currently visible to avoid redundant DOM writes
+  private _itemVisibility: boolean[] = []
   // PERFORMANCE: Cache last transition values for transitionDuration/timeFunction methods
   private _lastTransitionDuration: string = '0ms'
   private _lastTimingFunction: string = ''
-  // PERFORMANCE: Track whether all items need initial transforms
-  private _needsFullRender: boolean = true
-  private _lastItemCount: number = 0
   constructor(public scroll: BScroll) {
     this.init()
   }
@@ -254,6 +253,14 @@ export default class Wheel implements PluginAPI {
         this.rotateX(endPoint.y)
       }
     )
+
+    // PERFORMANCE/BUGFIX: In transition mode with realtime probe, the in-flight
+    // position updates come through animater "move" events (computed transform
+    // sampling) rather than translater "translate" events. Hook this so rotateX
+    // keeps visibility and transforms in sync during momentum.
+    animater.hooks.on(animater.hooks.eventTypes.move, (endPoint: Position) => {
+      this.rotateX(endPoint.y)
+    })
   }
 
   private refreshBoundary() {
@@ -313,37 +320,41 @@ export default class Wheel implements PluginAPI {
     const itemCount = this.items.length
     if (itemCount === 0) return
 
-    // PERFORMANCE: On first render or when items change, set transforms for ALL items
-    // so they have correct initial positions on the 3D cylinder.
-    // On subsequent calls, only update the visible window for performance.
-    // Items outside the window keep their stale (but valid) transforms —
-    // they're clipped by overflow:hidden and CSS mask gradients on the wheel.
-    if (this._needsFullRender || itemCount !== this._lastItemCount) {
-      for (let i = 0; i < itemCount; i++) {
-        const deg = rotate * (y / this.itemHeight + i)
-        const SafeDeg = deg.toFixed(3)
-        ;(this.items[i] as HTMLElement).style[
-          style.transform as any
-        ] = `rotateX(${SafeDeg}deg)`
-      }
-      this._needsFullRender = false
-      this._lastItemCount = itemCount
-      return
-    }
-
     const visibleHalf = Math.ceil(VISIBILITY_THRESHOLD_DEG / rotate) + 1
     const currentIndex =
       this.itemHeight > 0 ? Math.round(-y / this.itemHeight) : 0
     const visibleStart = Math.max(0, currentIndex - visibleHalf)
     const visibleEnd = Math.min(itemCount - 1, currentIndex + visibleHalf)
 
-    for (let i = visibleStart; i <= visibleEnd; i++) {
+    for (let i = 0; i < itemCount; i++) {
+      const item = this.items[i] as HTMLElement
+      if (i < visibleStart || i > visibleEnd) {
+        if (this._itemVisibility[i] !== false) {
+          item.style.visibility = 'hidden'
+          item.style.pointerEvents = 'none'
+          this._itemVisibility[i] = false
+        }
+        continue
+      }
+
       const deg = rotate * (y / this.itemHeight + i)
       // Too small value is invalid in some phones, issue 1026
       const SafeDeg = deg.toFixed(3)
-      ;(this.items[i] as HTMLElement).style[
-        style.transform as any
-      ] = `rotateX(${SafeDeg}deg)`
+      item.style[style.transform as any] = `rotateX(${SafeDeg}deg)`
+
+      if (this._itemVisibility[i] !== true) {
+        item.style.visibility = ''
+        item.style.pointerEvents = ''
+        if (this._lastTransitionDuration) {
+          item.style[style.transitionDuration as any] =
+            this._lastTransitionDuration
+        }
+        if (this._lastTimingFunction) {
+          item.style[style.transitionTimingFunction as any] =
+            this._lastTimingFunction
+        }
+        this._itemVisibility[i] = true
+      }
     }
   }
 
