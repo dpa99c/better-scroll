@@ -242,10 +242,16 @@ const getAnswersFromInquirer = async (packagesName) => {
 }
 const buildBootstrap = async () => {
   const packagesName = getPackagesName()
-  // provide 'all' option
-  packagesName.unshift('all')
 
-  const answers = await getAnswersFromInquirer(packagesName)
+  // Allow non-interactive build via --all flag
+  let answers
+  if (process.argv.includes('--all')) {
+    answers = packagesName
+  } else {
+    // provide 'all' option
+    packagesName.unshift('all')
+    answers = await getAnswersFromInquirer(packagesName)
+  }
 
   if (!answers) return
 
