@@ -21,8 +21,7 @@
     "test:tsd": "tsc -p ./test-dts/tsconfig.json",
     "vue:test:e2e": "lerna run --stream --scope examples vue:test:e2e",
     "cm": "git-cz",
-    "preinstall": "node ./scripts/checkYarn.js",
-    "postinstall": "yarn bootstrap"
+    "postinstall": "npx lerna bootstrap"
   },
   "lint-staged": {
     "*.ts": [
